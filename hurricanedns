@@ -38,16 +38,16 @@ def write_help(func):
 
     return decorator
 
-
 class HurricaneDNSShell(cmd.Cmd):
     def __init__(self, username, password, tfa):
         cmd.Cmd.__init__(self)
-        self.__username = username
-        self.__password = password
-        self.__tfa = tfa
-        self.__hdns = None
-        self._make_prompt()
-        self._get_hdns()
+        self.heDNS = HurricaneDNS.HurricaneDNS(username, password, tfa)
+        self.prompt = "[%s@dns.he.net] " % username
+
+    def __print_error(self, errmsg, command=None):
+        if not command:
+            command = self.lastcmd.split()[0]
+        print(f"hdnssh: {command}: {errmsg}")
 
     @staticmethod
     def filter_down(args, pos, possibiles):
@@ -58,7 +58,7 @@ class HurricaneDNSShell(cmd.Cmd):
         return final
 
     def default(self, line):
-        self._do_error("command not found", line.split()[0])
+        self.__print_error("command not found", line.split()[0])
 
     def completedefault(self, text, line, begidx, endidx):
         pass
@@ -77,31 +77,31 @@ class HurricaneDNSShell(cmd.Cmd):
         """
         args = split_args(args)
         if len(args) < 2 or len(args) > 3:
-            self._do_error("Must specify both a source and target")
+            self.__print_error("Must specify both a source and target")
             return
 
         if len(args) == 3 and args[0].lower() != "-f":
-            self._do_error("If passing 3 arguments, first arg shoudl be -f")
+            self.__print_error("If passing 3 arguments, first arg shoudl be -f")
             return
 
-        existing = self._get_hdns().domain_list
+        existing = self.heDNS.domain_list
 
         src = args[0].lower()
         target = args[1].lower()
 
         if src not in existing:
-            self._do_error("There is no domain '%s', source must exist" % src)
+            self.__print_error("There is no domain '%s', source must exist" % src)
             return
 
         if target not in existing:
             print("Domain '%s' does not exist, attempting to create" % target)
             try:
-                self._get_hdns().add_domain(target)
+                self.heDNS.add_domain(target)
             except HurricaneDNS.HurricaneError as e:
-                self._do_error(e)
+                self.__print_error(e)
                 return
 
-        src_records = self._get_hdns().get_domain_records(src)
+        src_records = self.heDNS.get_domain_records(src)
 
         for record in src_records:
             host = record["host"][::-1].replace(src[::-1], target[::-1], 1)[::-1]
@@ -109,7 +109,7 @@ class HurricaneDNSShell(cmd.Cmd):
                 continue
             if "extended" not in record:
                 record["extended"] = record["value"]
-            self._get_hdns().add_record(
+            self.heDNS.add_record(
                 target,
                 host,
                 record["type"],
@@ -127,7 +127,7 @@ class HurricaneDNSShell(cmd.Cmd):
         if pos < 2 or pos > 3:
             return
 
-        domains = self._get_hdns().domain_list
+        domains = self.heDNS.domain_list
         if pos == 3:
             domains = filter(lambda x: x.lower() != args[1].lower(), domains)
 
@@ -139,13 +139,14 @@ class HurricaneDNSShell(cmd.Cmd):
 
         !SYNOPSIS
         add domain [domain option]
-        add domain host type value [mx] [ttl]
+        add domain host type value [mx] [ttl] [ddns_key]
 
         !DESCRIPTION
         Add either a domain or a host record to HurricaneDNS. If the number of
         arguments is 1 or 2, it will add the domain in arg 1, and then use arg
         2 as option. If the number of arguments is between 4 and 6, it will
-        add the host record with optional MX and TTL.
+        add the host record with optional MX and TTL. If argument 7 is offered,
+        DDNS will be enabled for the record and used the argument as the key.
 
         """
         args = split_args(args)
@@ -156,13 +157,13 @@ class HurricaneDNSShell(cmd.Cmd):
                 if len(args) == 2:
                     (option, value) = args[1].split("=", 1)
                     extra[option] = value
-                self._get_hdns().add_domain(domain, **extra)
+                self.heDNS.add_domain(domain, **extra)
             elif 7 >= len(args) >= 4:
-                self._get_hdns().add_record(*args)
+                self.heDNS.add_record(*args)
             else:
-                self._do_error("Invalid arguments")
+                self.__print_error("Invalid arguments")
         except HurricaneDNS.HurricaneError as e:
-            self._do_error(e)
+            self.__print_error(e)
 
     def complete_add(self, text, line, begidx, endidx):
         args = line.split()
@@ -170,7 +171,7 @@ class HurricaneDNSShell(cmd.Cmd):
         if not text:
             pos += 1
 
-        domains = self._get_hdns().domain_list
+        domains = self.heDNS.domain_list
         if pos == 2:
             return self.filter_down(args, pos, domains)
         elif args[1] not in domains:
@@ -224,11 +225,11 @@ class HurricaneDNSShell(cmd.Cmd):
         args = split_args(args)
         try:
             if len(args) == 1:
-                self._get_hdns().del_domain(args[0])
+                self.heDNS.del_domain(args[0])
             elif len(args) > 1:
-                self._get_hdns().del_records(*args)
+                self.heDNS.del_records(*args)
         except HurricaneDNS.HurricaneError as e:
-            self._do_error(e)
+            self.__print_error(e)
 
     def complete_del(self, text, line, begidx, endidx):
         args = line.split()
@@ -236,14 +237,14 @@ class HurricaneDNSShell(cmd.Cmd):
         if not text:
             pos += 1
 
-        domains = self._get_hdns().domain_list
+        domains = self.heDNS.domain_list
         if pos <= 1:
             return
         elif pos == 2:
             return self.filter_down(args, pos, domains)
         else:
             if args[1] in domains:
-                records = self._get_hdns().get_domain_records(args[1])
+                records = self.heDNS.get_domain_records(args[1])
                 records = filter(lambda x: x["status"] != "locked", records)
             else:
                 records = None
@@ -315,7 +316,7 @@ class HurricaneDNSShell(cmd.Cmd):
         domains = list(
             filter(
                 lambda x: x.startswith(text) if text else True,
-                self._get_hdns().domain_list,
+                self.heDNS.domain_list,
             )
         )
         return domains
@@ -334,13 +335,13 @@ class HurricaneDNSShell(cmd.Cmd):
 
         """
         if args:
-            existing = self._get_hdns().domain_list
+            existing = self.heDNS.domain_list
             records = []
             for domain in split_args(args):
                 if domain.lower() not in existing:
-                    self._do_error("Invalid domain: " + domain)
+                    self.__print_error("Invalid domain: " + domain)
                     continue
-                records.extend(self._get_hdns().get_domain_records(domain))
+                records.extend(self.heDNS.get_domain_records(domain))
 
             if records:
                 maxhost = max(len(item["host"]) for item in records)
@@ -363,7 +364,7 @@ class HurricaneDNSShell(cmd.Cmd):
                     )
         else:
             # ls domains
-            domain_dict = self._get_hdns().get_domain_info("all")
+            domain_dict = self.heDNS.get_domain_info("all")
             template = "%-10s %-9s %s"
             print(template % ("ID", "DOMAIN", "TYPE"))
             for domain in sorted(domain_dict.keys()):
@@ -387,7 +388,7 @@ class HurricaneDNSShell(cmd.Cmd):
             import dns.rdatatype
             from dns import zone
         except ImportError as e:
-            self._do_error("You do not have python-dns installed!")
+            self.__print_error("You do not have python-dns installed!")
             return
 
         args = split_args(args)
@@ -396,29 +397,29 @@ class HurricaneDNSShell(cmd.Cmd):
             try:
                 zonedata = open(args[1]).read()
             except:
-                self._do_error("Unable to open %s for reading" % args[1])
+                self.__print_error("Unable to open %s for reading" % args[1])
                 return
         else:
-            self._do_error("Invalid arguments")
+            self.__print_error("Invalid arguments")
             return
 
         try:
             Z = zone.from_text(zonedata, domain)
         except SyntaxError as e:
             if e.message:
-                self._do_error(e.message)
+                self.__print_error(e.message)
             else:
-                self._do_error("Syntax error found in zone file")
+                self.__print_error("Syntax error found in zone file")
             return
         except Exception as e:
-            self._do_error("Unable to parse zone file")
+            self.__print_error("Unable to parse zone file")
             return
 
         # create the domain
         try:
-            self._get_hdns().add_domain(domain)
+            self.heDNS.add_domain(domain)
         except HurricaneDNS.HurricaneError as e:
-            self._do_error(e)
+            self.__print_error(e)
             return
 
         for host, data in Z.iteritems():
@@ -459,7 +460,7 @@ class HurricaneDNSShell(cmd.Cmd):
                             _value = ""
 
                     try:
-                        self._get_hdns().add_record(
+                        self.heDNS.add_record(
                             domain,
                             name,
                             dns.rdatatype.to_text(rdata.rdtype),
@@ -470,7 +471,7 @@ class HurricaneDNSShell(cmd.Cmd):
                     except HurricaneDNS.HurricaneError as e:
                         if "properly delegated" in str(e):
                             pass
-                        self._do_error(e)
+                        self.__print_error(e)
 
     def emptyline(self):
         pass
@@ -481,21 +482,6 @@ class HurricaneDNSShell(cmd.Cmd):
     help_import = write_help(do_import)
     help_cp = write_help(do_cp)
 
-    def _do_error(self, errmsg, command=None):
-        if not command:
-            command = self.lastcmd.split()[0]
-        print(f"hdnssh: {command}: {errmsg}")
-
-    def _get_hdns(self):
-        if not self.__hdns:
-            self.__hdns = HurricaneDNS.HurricaneDNS(
-                self.__username, self.__password, self.__tfa
-            )
-        return self.__hdns
-
-    def _make_prompt(self):
-        self.prompt = "[%s@dns.he.net] " % self.__username
-
     def cmdloop(self):
         try:
             cmd.Cmd.cmdloop(self)
@@ -504,7 +490,7 @@ class HurricaneDNSShell(cmd.Cmd):
             self.cmdloop()
 
 
-def main():
+if __name__ == "__main__":
     import argparse
     from sys import exit, stdin
 
@@ -542,7 +528,3 @@ def main():
         exit(1)
     except HurricaneDNS.HurricaneError as e:
         print(f"{parser.prog}: {e}")
-
-
-if __name__ == "__main__":
-    main()
