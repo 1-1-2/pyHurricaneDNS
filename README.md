@@ -7,13 +7,26 @@
 
 ## Install
 
-```
-git clone https://github.com/1-1-2/pyHurricaneDNS
+### Online
 
+```bash
+pip install hurricanedns
+```
+
+### Offline
+
+```bash
+# Get source code
+git clone https://github.com/tresni/pyHurricaneDNS
+
+# Build
 cd pyHurricaneDNS
 python3 setup.py build
+
+# Install using pip
 pip install .
-# Using pipx
+
+# Install using pipx(OS like debian?)
 # pipx install .
 ```
 
@@ -31,7 +44,8 @@ pip install .
 
 ## TODO
 
-- edit (you may del and add now)
+- Edit record. *Currently implemented through del+add*.
+- Delete record with specified ID.
 
 ## Usage
 
